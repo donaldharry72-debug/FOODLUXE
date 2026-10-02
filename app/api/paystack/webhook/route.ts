@@ -4,6 +4,7 @@ import {
   recordVerifiedPayment,
   verifyPaystackTransaction,
 } from '../../../../lib/paystack/payments'
+import { sendOrderConfirmationEmail } from '../../../../lib/mailgun/order-confirmation'
 
 type PaystackWebhookEvent = {
   event?: unknown
@@ -52,9 +53,16 @@ export async function POST(request: Request) {
       console.error('[paystack webhook] Verified payment did not match an order:', result.kind)
     }
 
+    if (result.kind === 'paid') {
+      const emailResult = await sendOrderConfirmationEmail(result.orderId)
+      if (emailResult === 'in_progress') {
+        return new Response('Order confirmation email is still processing', { status: 503 })
+      }
+    }
+
     return new Response('Event received', { status: 200 })
-  } catch (error) {
-    console.error('[paystack webhook] Could not process verified payment:', error)
+  } catch {
+    console.error('[paystack webhook] Could not finish payment or confirmation email processing.')
     return new Response('Could not process payment event', { status: 500 })
   }
 }

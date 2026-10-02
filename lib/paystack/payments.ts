@@ -17,7 +17,7 @@ export type VerifiedPaystackTransaction = {
 }
 
 type PaymentResult =
-  | { kind: 'paid'; orderNumber: number | string }
+  | { kind: 'paid'; orderId: string; orderNumber: number | string }
   | { kind: 'not_paid' }
   | { kind: 'not_found' }
   | { kind: 'amount_mismatch' }
@@ -117,5 +117,5 @@ export async function recordVerifiedPayment(transaction: VerifiedPaystackTransac
     if (historyError) throw new Error('Could not add payment to order history: ' + historyError.message)
   }
 
-  return { kind: 'paid', orderNumber: order.order_number }
+  return { kind: 'paid', orderId: order.id, orderNumber: order.order_number }
 }
