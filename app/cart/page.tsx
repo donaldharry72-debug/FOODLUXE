@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useCart } from './cart-provider'
 
 const naira = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' })
@@ -9,10 +10,12 @@ export default function CartPage() {
   const { items, itemCount, subtotal, ready, removeItem, setQuantity } = useCart()
 
   return (
-    <main className='min-h-screen bg-stone-950 px-5 py-8 text-amber-50 sm:px-8 md:px-12'>
-      <header className='mb-10 flex items-center justify-between gap-4'>
+    <main className='lux-page min-h-screen bg-stone-950 px-5 py-8 text-amber-50 sm:px-8 md:px-12'>
+      <header className='site-header compact-header mb-10 flex items-center justify-between gap-4'>
         <div>
-          <Link href='/' className='font-serif text-3xl text-amber-400'>FOODLUXE</Link>
+          <Link href='/' aria-label='FOODLUXE home'>
+            <Image src='/foodluxe-logo.png' alt='FOODLUXE' width={400} height={229} className='brand-logo-image' />
+          </Link>
           <p className='mt-1 text-sm text-amber-100/65'>Your shopping cart</p>
         </div>
         <Link href='/' className='text-sm text-amber-200 hover:text-amber-100'>Continue shopping</Link>
@@ -22,7 +25,7 @@ export default function CartPage() {
       {!ready ? (
         <p className='mt-8 text-amber-100/65'>Loading your cart…</p>
       ) : items.length === 0 ? (
-        <section className='mt-8 rounded-2xl border border-amber-100/15 bg-white/[0.03] p-8 text-center'>
+        <section className='lux-surface mt-8 p-8 text-center'>
           <p className='text-lg'>Your cart is empty.</p>
           <Link href='/' className='mt-5 inline-block rounded-lg bg-amber-400 px-5 py-3 font-semibold text-stone-950 hover:bg-amber-300'>
             Browse the menu
@@ -33,7 +36,7 @@ export default function CartPage() {
           <section aria-label='Items in your cart' className='space-y-4'>
             <p className='mb-4 text-sm text-amber-100/60'>{itemCount} {itemCount === 1 ? 'item' : 'items'}</p>
             {items.map((item) => (
-              <article key={item.id} className='flex flex-col gap-4 rounded-2xl border border-amber-100/15 bg-white/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between'>
+              <article key={item.id} className='cart-line flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between'>
                 <div>
                   <h2 className='font-semibold'>{item.name}</h2>
                   <p className='mt-1 text-sm text-amber-100/60'>{naira.format(item.price_naira)} each</p>
@@ -73,7 +76,7 @@ export default function CartPage() {
             ))}
           </section>
 
-          <aside className='h-fit rounded-2xl border border-amber-300/25 bg-white/[0.03] p-6'>
+          <aside className='summary-card h-fit p-6'>
             <h2 className='font-serif text-xl text-amber-200'>Order summary</h2>
             <div className='mt-5 flex justify-between gap-4 text-sm'>
               <span className='text-amber-100/65'>Items ({itemCount})</span>

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '../../../lib/supabase/admin'
 import { createClient } from '../../../lib/supabase/server'
@@ -14,6 +15,15 @@ type CheckoutBody = {
 type RequestedItem = {
   id: string
   quantity: number
+}
+
+type PaystackInitializeResponse = {
+  status?: boolean
+  message?: string
+  data?: {
+    authorization_url?: string
+    reference?: string
+  }
 }
 
 const uuidPattern =
@@ -67,13 +77,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Please sign in before checking out.' }, { status: 401 })
   }
 
-  const secretKey = process.env.SUPABASE_SECRET_KEY
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!secretKey && !serviceRoleKey) {
+  if (!supabaseSecretKey && !serviceRoleKey) {
     return NextResponse.json(
       { error: 'Checkout needs a server key. Ask the site owner to finish the setup.' },
       { status: 503 }
     )
+  }
+
+  const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  if (!paystackSecretKey || !siteUrl) {
+    return NextResponse.json(
+      { error: 'Paystack setup is incomplete. Add the test secret key and site URL, then restart the app.' },
+      { status: 503 }
+    )
+  }
+
+  if (process.env.NODE_ENV !== 'production' && !paystackSecretKey.startsWith('sk_test_')) {
+    return NextResponse.json({ error: 'Use your Paystack test secret key while running the local site.' }, { status: 503 })
+  }
+
+  let callbackUrl: string
+  try {
+    const configuredSite = new URL(siteUrl)
+    if (configuredSite.protocol !== 'https:' && configuredSite.hostname !== 'localhost') {
+      return NextResponse.json({ error: 'The FOODLUXE site URL must use HTTPS.' }, { status: 503 })
+    }
+    callbackUrl = new URL('/api/paystack/callback', configuredSite).toString()
+  } catch {
+    return NextResponse.json({ error: 'The FOODLUXE site URL is invalid.' }, { status: 503 })
   }
 
   let parsedBody: unknown
@@ -175,11 +209,13 @@ export async function POST(request: Request) {
     subtotalNaira <= 0 ||
     !Number.isSafeInteger(deliveryFeeNaira) ||
     deliveryFeeNaira < 0 ||
-    !Number.isSafeInteger(totalNaira)
+    !Number.isSafeInteger(totalNaira) ||
+    totalNaira > Math.floor(Number.MAX_SAFE_INTEGER / 100)
   ) {
     return NextResponse.json({ error: 'The order total is invalid. Please contact FOODLUXE.' }, { status: 500 })
   }
 
+  const paymentReference = 'FLX-' + randomUUID()
   const { data: order, error: orderError } = await admin
     .from('orders')
     .insert({
@@ -188,6 +224,7 @@ export async function POST(request: Request) {
       customer_email: authData.user.email,
       phone,
       delivery_address: deliveryAddress,
+      shipping_type: 'local_rider',
       delivery_notes: deliveryNotes || null,
       zone_id: zone.id,
       subtotal_naira: subtotalNaira,
@@ -195,6 +232,7 @@ export async function POST(request: Request) {
       total_naira: totalNaira,
       status: 'pending_payment',
       payment_status: 'unpaid',
+      payment_reference: paymentReference,
     })
     .select('id, order_number')
     .single()
@@ -217,7 +255,7 @@ export async function POST(request: Request) {
   const { error: historyError } = await admin.from('order_status_history').insert({
     order_id: order.id,
     status: 'pending_payment',
-    note: 'Order created; awaiting payment.',
+    note: 'Order created; awaiting Paystack payment.',
   })
 
   if (historyError) {
@@ -226,9 +264,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'We could not finish saving your order. Please try again.' }, { status: 500 })
   }
 
+  let paymentResponse: Response
+  try {
+    paymentResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + paystackSecretKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: authData.user.email,
+        amount: totalNaira * 100,
+        currency: 'NGN',
+        reference: paymentReference,
+        callback_url: callbackUrl,
+        metadata: {
+          order_id: order.id,
+          order_number: String(order.order_number),
+        },
+      }),
+      cache: 'no-store',
+    })
+  } catch (error) {
+    console.error('[checkout] Could not reach Paystack:', error)
+    return NextResponse.json({ error: 'We could not connect to Paystack. Your order remains unpaid; please try again or contact FOODLUXE before placing the order again.' }, { status: 502 })
+  }
+
+  const paymentResult = (await paymentResponse.json().catch(() => null)) as PaystackInitializeResponse | null
+  const authorizationUrl = paymentResult?.data?.authorization_url
+  if (!paymentResponse.ok || !paymentResult?.status || !authorizationUrl || paymentResult.data?.reference !== paymentReference) {
+    console.error('[checkout] Paystack did not initialize payment:', paymentResult?.message ?? paymentResponse.statusText)
+    return NextResponse.json({ error: 'Paystack could not start payment. Your order remains unpaid; check the test key and contact FOODLUXE before placing the order again.' }, { status: 502 })
+  }
+
   return NextResponse.json({
     orderId: order.id,
     orderNumber: order.order_number,
+    authorizationUrl,
     subtotalNaira,
     deliveryFeeNaira,
     totalNaira,

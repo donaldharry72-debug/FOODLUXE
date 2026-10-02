@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '../../lib/supabase/client'
 import { getSafeNextPath } from '../../lib/auth-redirect'
 
@@ -87,11 +88,11 @@ export function LoginForm({ initialError = '' }: { initialError?: string }) {
   }
 
   const inputClass =
-    'w-full rounded-lg border border-amber-100/20 bg-stone-900 px-4 py-3 text-amber-50 outline-none transition focus:border-amber-400'
+    'lux-input w-full rounded-lg border border-amber-100/20 bg-stone-900 px-4 py-3 text-amber-50 outline-none transition focus:border-amber-400'
 
   return (
-    <section className='w-full max-w-md rounded-2xl border border-amber-100/15 bg-stone-950/90 p-6 shadow-2xl shadow-black/30 sm:p-8'>
-      <a href='/' className='text-sm text-amber-200/80 hover:text-amber-100'>← Back to menu</a>
+    <section className='auth-card login-card w-full max-w-md rounded-2xl border border-amber-100/15 bg-stone-950/90 p-6 shadow-2xl shadow-black/30 sm:p-8'>
+      <Link href='/' className='text-sm text-amber-200/80 hover:text-amber-100'>← Back to menu</Link>
       <h1 className='mt-6 font-serif text-3xl text-amber-300'>
         {isSignUp ? 'Create your account' : 'Welcome back'}
       </h1>

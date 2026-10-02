@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useCart } from '../cart/cart-provider'
 
 type DeliveryZone = {
@@ -17,13 +16,7 @@ type CheckoutFormProps = {
   initialName: string
   email: string
   zonesUnavailable: boolean
-}
-
-type CreatedOrder = {
-  orderNumber: number | string
-  subtotalNaira: number
-  deliveryFeeNaira: number
-  totalNaira: number
+  paymentNotice?: string
 }
 
 const naira = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' })
@@ -33,12 +26,11 @@ export function CheckoutForm({
   initialName,
   email,
   zonesUnavailable,
+  paymentNotice,
 }: CheckoutFormProps) {
-  const router = useRouter()
-  const { items, subtotal, ready, clearCart } = useCart()
+  const { items, subtotal, ready } = useCart()
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -67,9 +59,19 @@ export function CheckoutForm({
         return
       }
 
-      setCreatedOrder(result as CreatedOrder)
-      clearCart()
-      router.refresh()
+      const authorizationUrl = result.authorizationUrl
+      if (typeof authorizationUrl !== 'string') {
+        setErrorMessage('We could not open secure payment. Please try again.')
+        return
+      }
+
+      const paymentUrl = new URL(authorizationUrl)
+      if (paymentUrl.protocol !== 'https:' || paymentUrl.hostname !== 'checkout.paystack.com') {
+        setErrorMessage('Paystack returned an invalid payment link. Please contact FOODLUXE.')
+        return
+      }
+
+      window.location.assign(paymentUrl.toString())
     } catch {
       setErrorMessage('We could not reach the Foodluxe server. Check your connection and try again.')
     } finally {
@@ -78,33 +80,12 @@ export function CheckoutForm({
   }
 
   if (!ready) {
-    return <p className='text-amber-100/65'>Loading your cart…</p>
-  }
-
-  if (createdOrder) {
-    return (
-      <section className='mx-auto max-w-xl rounded-2xl border border-amber-300/25 bg-white/[0.03] p-7 sm:p-9'>
-        <p className='text-sm font-semibold uppercase tracking-widest text-emerald-300'>Order saved</p>
-        <h1 className='mt-3 font-serif text-3xl text-amber-100'>Thank you for your order</h1>
-        <p className='mt-4 text-amber-100/70'>
-          Order #{createdOrder.orderNumber} has been saved as awaiting payment.
-          Payment will be added in the next build step.
-        </p>
-        <dl className='mt-6 space-y-3 border-t border-amber-100/15 pt-5'>
-          <div className='flex justify-between gap-4'><dt>Meals</dt><dd>{naira.format(createdOrder.subtotalNaira)}</dd></div>
-          <div className='flex justify-between gap-4'><dt>Delivery</dt><dd>{naira.format(createdOrder.deliveryFeeNaira)}</dd></div>
-          <div className='flex justify-between gap-4 border-t border-amber-100/15 pt-3 font-semibold'><dt>Total</dt><dd className='text-amber-300'>{naira.format(createdOrder.totalNaira)}</dd></div>
-        </dl>
-        <Link href='/' className='mt-7 inline-block rounded-lg bg-amber-400 px-5 py-3 font-semibold text-stone-950 hover:bg-amber-300'>
-          Return to menu
-        </Link>
-      </section>
-    )
+    return <p className='text-amber-100/65'>Loading your cartâ€¦</p>
   }
 
   if (items.length === 0) {
     return (
-      <section className='rounded-2xl border border-amber-100/15 bg-white/[0.03] p-7'>
+      <section className='lux-surface p-7'>
         <h1 className='font-serif text-2xl text-amber-100'>Your cart is empty</h1>
         <p className='mt-2 text-amber-100/65'>Add a meal before you start checkout.</p>
         <Link href='/' className='mt-5 inline-block rounded-lg bg-amber-400 px-5 py-3 font-semibold text-stone-950 hover:bg-amber-300'>
@@ -115,7 +96,7 @@ export function CheckoutForm({
   }
 
   const inputClass =
-    'mt-2 w-full rounded-lg border border-amber-100/20 bg-stone-900 px-4 py-3 text-amber-50 outline-none transition focus:border-amber-400'
+    'lux-input mt-2 w-full rounded-lg border border-amber-100/20 bg-stone-900 px-4 py-3 text-amber-50 outline-none transition focus:border-amber-400'
 
   return (
     <div className='mx-auto grid max-w-5xl gap-8 lg:grid-cols-[1fr_340px]'>
@@ -134,7 +115,16 @@ export function CheckoutForm({
           </p>
         )}
 
-        <form onSubmit={handleSubmit} className='mt-6 space-y-5 rounded-2xl border border-amber-100/15 bg-white/[0.03] p-5 sm:p-7'>
+        {paymentNotice && (
+          <p role='alert' className='mt-5 rounded-lg bg-amber-950/70 p-4 text-sm text-amber-100'>
+            {paymentNotice === 'setup'
+              ? 'Paystack test setup is not finished yet. Add the test secret key to .env.local and restart the app.'
+              : paymentNotice === 'not-complete'
+                ? 'Payment was not completed. Your cart is still saved; you can try again.'
+                : 'We could not verify the payment just now. Check your order status before trying again.'}
+          </p>
+        )}
+        <form onSubmit={handleSubmit} className='lux-surface mt-6 space-y-5 p-5 sm:p-7'>
           <label className='block text-sm text-amber-100/80'>
             Full name
             <input name='customerName' type='text' autoComplete='name' minLength={2} maxLength={100} defaultValue={initialName} required className={inputClass} />
@@ -153,7 +143,7 @@ export function CheckoutForm({
               <option value='' disabled>Choose your delivery area</option>
               {zones.map((zone) => (
                 <option key={zone.id} value={zone.id}>
-                  {zone.name} — {naira.format(zone.fee_naira)} delivery, about {zone.estimated_minutes} minutes
+                  {zone.name} â€” {naira.format(zone.fee_naira)} delivery, about {zone.estimated_minutes} minutes
                 </option>
               ))}
             </select>
@@ -170,17 +160,17 @@ export function CheckoutForm({
             disabled={busy || zonesUnavailable || zones.length === 0}
             className='w-full rounded-lg bg-amber-400 px-5 py-3 font-semibold text-stone-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60'
           >
-            {busy ? 'Saving your order…' : 'Create order'}
+            {busy ? 'Opening Paystack checkout…' : 'Continue to secure payment'}
           </button>
         </form>
       </section>
 
-      <aside className='h-fit rounded-2xl border border-amber-300/25 bg-white/[0.03] p-6'>
+      <aside className='summary-card h-fit p-6'>
         <h2 className='font-serif text-xl text-amber-200'>Order summary</h2>
         <ul className='mt-5 space-y-3'>
           {items.map((item) => (
             <li key={item.id} className='flex justify-between gap-4 text-sm'>
-              <span className='text-amber-100/70'>{item.quantity} × {item.name}</span>
+              <span className='text-amber-100/70'>{item.quantity} Ã— {item.name}</span>
               <span>{naira.format(item.price_naira * item.quantity)}</span>
             </li>
           ))}
